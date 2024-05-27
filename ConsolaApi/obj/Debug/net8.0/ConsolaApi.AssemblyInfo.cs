@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ConsolaApi")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2a0bc0c8253a6bac6e0fd06d30538509db3abe46")]
 [assembly: System.Reflection.AssemblyProductAttribute("ConsolaApi")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ConsolaApi")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

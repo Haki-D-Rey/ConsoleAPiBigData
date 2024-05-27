@@ -20,3 +20,4 @@ C:\Users\cesar.cuadra\source\repos\ConsolaApi\ConsolaApi\obj\Debug\net8.0\refint
 C:\Users\cesar.cuadra\source\repos\ConsolaApi\ConsolaApi\obj\Debug\net8.0\ConsolaApi.pdb
 C:\Users\cesar.cuadra\source\repos\ConsolaApi\ConsolaApi\obj\Debug\net8.0\ConsolaApi.genruntimeconfig.cache
 C:\Users\cesar.cuadra\source\repos\ConsolaApi\ConsolaApi\obj\Debug\net8.0\ref\ConsolaApi.dll
+C:\Users\cesar.cuadra\source\repos\ConsolaApi\ConsolaApi\obj\Debug\net8.0\ConsolaApi.sourcelink.json

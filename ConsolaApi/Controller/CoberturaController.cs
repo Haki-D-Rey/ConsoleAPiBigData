@@ -1,9 +1,11 @@
 ﻿using ConsoleApi.Model;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.SqlServer.Server;
 using System;
 using System.Data;
 using System.Data.SqlClient;
 using System.Diagnostics;
+using System.Net;
 using System.Reflection;
 
 
@@ -11,7 +13,7 @@ namespace MyRestApi.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class CoberturaController : ControllerBase
+    public class CoberturaController : ControllerBase 
     {
         private static readonly string connectionString = "Data Source=10.0.29.7;Initial Catalog=Prueba-VDHMIL;User ID=sa;Password=&ecurity23;";
         private static readonly string connectionStringProd = "Data Source=HMIL-GRM-APPPRD;Initial Catalog=DPC;User ID=sa;Password=P@$$W0RD;";
@@ -31,17 +33,25 @@ namespace MyRestApi.Controllers
 
         public static Dictionary<string, string> KeyFilterSex { get; } = new Dictionary<string, string>
         {
-            { "1", "M" },
-            { "2", "F" }
+            { "2", "F" },
+            { "1", "M" }
+        };
+
+        public static Dictionary<string, int> KeyFilterIndex { get; } = new Dictionary<string, int>
+        {
+            { "ORD", 2 },
+            { "CARGA_I", 13 },
+            { "ORIGEN", 14 },
+            { "DEFAULT", 00 }
         };
 
         public static Dictionary<string, string> KeyFilterClasTipoU { get; } = new Dictionary<string, string>
         {
             { "00", "TITULAR" },
-            { "01", "CONYUGE" },
-            { "02", "MADRE" },
-            { "03", "PADRE" },
-            { "04", "HIJO" }
+            { "1", "CONYUGE" },
+            { "2", "MADRE" },
+            { "3", "PADRE" },
+            { "4", "HIJO" }
         };
 
         public CoberturaController()
@@ -102,7 +112,8 @@ namespace MyRestApi.Controllers
         [HttpPost]
         public IActionResult BulkInsertFromAccess()
         {
-
+            // Devolver una respuesta exitosa (código 200)
+            List<dynamic> respuestas = new List<dynamic>();
             var connection = new ConexionManager(connectionString).GetConnection();
 
             if (connection != null)
@@ -118,12 +129,11 @@ namespace MyRestApi.Controllers
 
                     connection.Close();
 
-                    // Devolver una respuesta exitosa (código 200)
-                    return Ok("Bulk insert desde Access a SQL Server completado exitosamente.");
+                    respuestas.Add(new { StatusCode = 200, Message = "Bulk insert desde Access a SQL Server completado exitosamente.", Response = new { /* datos */ } });
+                    return Ok(respuestas);
                 }
                 catch (Exception ex)
                 {
-                    // En caso de error, devolver un código de error (por ejemplo, 500) con el mensaje de error
                     return StatusCode(500, $"Error: {ex.Message}");
                 }
             }
@@ -140,7 +150,8 @@ namespace MyRestApi.Controllers
         {
             try
             {
-                string[] archivosCSV = Directory.GetFiles(rutaDirectorio, "*.csv");
+
+                string[] archivosCSV = Directory.GetFiles(rutaDirectorio, "Cobertura - FULL.csv");
                 foreach (string archivo in archivosCSV)
                 {
                     Stopwatch archivoStopwatch = Stopwatch.StartNew(); // Iniciar el cronómetro para el archivo actual
@@ -153,8 +164,9 @@ namespace MyRestApi.Controllers
                         // Define el diccionario de mapeo de columnas
                         Dictionary<string, string> columnMapping = new Dictionary<string, string>()
                         {
-                            { "Tipo_regiStro", "ORIGEN_1" },
-                            { "Ord", "ORD" },
+                            { "Fin_Cob", "ID"},
+                            { "Publico", "ORIGEN_1" },
+                            { "Mes_Proceso", "ORD" },
                             { "Identidad", "IDENTIDAD" },
                             { "P_nombre", "NOMBRE1" },
                             { "S_nombre", "NOMBRE2" },
@@ -162,15 +174,15 @@ namespace MyRestApi.Controllers
                             { "S_apellido", "APELLIDO2" },
                             { "Sexo", "SEXO" },
                             { "Fecha_Nac", "F_NAC" },
-                            { "Grado", "GRADO" },
+                            { "Dgrado", "GRADO" },
                             { "Fecha_ing", "F_ING" },
                             { "Clas_usuario", "TIPO" },
-                            { "Carga_I", "CARGA_I" },
-                            { "Expediente", "N_EXPEDIENTE" },
-                            { "Tipo_regiStro2", "ORIGEN" },
+                            { "LugarChequeo", "CARGA_I" },
+                            { "Estado", "ORIGEN" },
                             { "Dunidad", "UM" },
                             { "Dcargo", "CARGO" },
-                            { "Clasificacion", "CLASIFICACION" },
+                            { "Expediente", "N_EXPEDIENTE" },
+                            { "Tipo_regiStro", "CLASIFICACION" },
                             { "Cedula", "CEDULA" },
                             { "NCarnet", "NO_CARNE" },
                         };
@@ -181,87 +193,71 @@ namespace MyRestApi.Controllers
                         {
                             string columnNameInDB = entry.Value;
 
-                            // Agregar la columna con el nombre correspondiente de la base de datos
-                            dataTable.Columns.Add(columnNameInDB);
-                        }
+                            // Determinar el tipo de datos de la columna
+                            Type columnType = (columnNameInDB == "F_NAC" || columnNameInDB == "F_ING") ? typeof(DateTime) : ((columnNameInDB == "ID" || columnNameInDB == "ORD") ? typeof(int) : typeof(string));
 
-                        List<Grado> ListaGradosMilitares = ObtenerGradosMilitares("S1");
+                            // Agregar la columna con el nombre correspondiente de la base de datos y el tipo de datos determinado
+                            dataTable.Columns.Add(columnNameInDB, columnType);
+                        }
 
                         // Leer y agregar los datos al nuevo DataTable, empezando desde la segunda fila
                         bool primeraFila = true;
                         int numColumnas = columnMapping.Count;
                         List<(string key, int index)> columnasOrdenadas = new List<(string key, int index)>();
-                        //string[] columnasOrdenadas = new string[numColumnas]; // Arreglo para almacenar las columnas en orden
+                        string[] columnasCSV = [];
+                        int[] indicesIncluidos = [];
+                        int contador = 0;
                         while (!lector.EndOfStream)
                         {
+
                             string linea = lector.ReadLine();
-                            
+
                             // Saltar la primera fila que contiene los nombres de las columnas
                             if (primeraFila)
                             {
                                 // Dividir la línea para obtener las columnas
-                                string[] columnasCSV = linea.Split(',');
+                                //columnasCSV = linea.Split(';');
 
-                                // Nuevo diccionario para almacenar el resultado
-                                
+                                columnasCSV = linea.Split(new char[] { ',', ';' });
+
+                                // Arreglo de campos a excluir
+                                string[] camposExcluidos = { "Fecha_Ret", "Inico_Cob", "Grado" };
+
+                                // Filtrar el arreglo original excluyendo los campos especificados
+                                string[] columnasFiltradas = columnasCSV.Except(camposExcluidos).ToArray();
+
+                                // Sacar los índices de los campos incluidos
+                                indicesIncluidos = Enumerable.Range(0, columnasCSV.Length)
+                                                                    .Where(i => !camposExcluidos.Contains(columnasCSV[i]))
+                                                                    .ToArray();
+
 
                                 // Iterar sobre el arreglo de columnas CSV
-                                for (int i = 0; i < columnasCSV.Length; i++)
+                                for (int i = 0; i < columnasFiltradas.Length; i++)
                                 {
-                                    string columna = columnasCSV[i];
+                                    string columna = columnasFiltradas[i];
                                     if (columnMapping.ContainsKey(columna))
                                     {
                                         string mappedKey = columnMapping[columna];
-                                        int index = Array.FindIndex(columnMapping.Keys.ToArray(), key => columnMapping[key] == mappedKey);
+                                        int index = Array.FindIndex(columnasFiltradas, key => columnMapping[key] == mappedKey);
                                         columnasOrdenadas.Add((mappedKey, index));
                                     }
                                 }
-
-                                foreach (var item in columnasOrdenadas)
-                                {
-                                    Console.WriteLine($"Key: {item.key}, Index: {item.index}");
-                                }
-
-                                // Reordenar las columnas según el mapeo y almacenarlas en el arreglo
-                                //for (int i = 0; i < numColumnas; i++)
-                                //{
-                                //    string columnNameInCSV = columnMapping.ElementAt(i).Key;
-                                //    string columnNameInBD = columnMapping.ElementAt(i).Value;
-                                //    int index = Array.IndexOf(columnasCSV, columnNameInCSV);
-                                //    if (index != -1)
-                                //    {
-                                //        index= columnNameInCSV == "Fecha_Nac" ? 12 : index;
-                                //        index = columnNameInCSV == "Fecha_ing" ? 13 : index;
-                                //        index = columnNameInCSV == "Cedula" ? 18 : index;
-                                //        index = columnNameInCSV == "NCarnet" ? 19 : index;
-                                //        columnasOrdenadas[index] = columnNameInBD;
-                                //    }
-                                //    else
-                                //    {
-                                //        // Si la columna no se encuentra en el archivo CSV, establecer un valor predeterminado
-                                //        columnasOrdenadas[i] = columnNameInBD; // O cualquier otro valor predeterminado que desees
-                                //    }
-                                //}
 
                                 primeraFila = false;
                                 continue;
                             }
 
-                            string[] valores = linea.Split(','); // Separar por comas
+                            string[] valores = linea.Split(new char[] { ',', ';' });
+
+                            // Filtrar el arreglo de valores excluyendo los valores correspondientes a los campos excluidos
+                            string[] valoresFiltrados = valores.Select((val, i) => indicesIncluidos.Contains(i) ? val : null).ToArray();
 
                             // Crear un nuevo array para almacenar los valores en el orden correcto
                             object[] valoresOrdenados = new object[numColumnas];
-                            //List<Grado> ListaGradosMilitares = ObtenerGradosMilitares("S1");
 
-                            // Mapear los valores de la fila actual al nuevo array según el arreglo de columnas ordenadas
-                            //for (int i = 0; i < numColumnas; i++)
-                            //{
-                            //    if (!string.IsNullOrEmpty(columnasOrdenadas[i]))
-                            //    {
-                            //        int index = Array.IndexOf(columnasOrdenadas, columnasOrdenadas[i]);
-                            //        valoresOrdenados[index] = ValidacionesValores(valores,index, columnasOrdenadas[i]);
-                            //    }
-                            //}
+                            // También podrías eliminar los valores nulos del arreglo si lo deseas.
+                            valores = valoresFiltrados.Where(val => val != null).ToArray();
 
                             // Declara la variable i fuera del ciclo interno
                             int j = 0;
@@ -269,13 +265,31 @@ namespace MyRestApi.Controllers
                             // Itera sobre el diccionario de mapeo de columnas
                             foreach (var kvp in columnasOrdenadas)
                             {
+                                j = 0;
                                 // Verifica si el valor de la entrada coincide con alguna de las claves del resultado
                                 foreach (var item in columnMapping)
                                 {
                                     if (item.Value == kvp.key)
                                     {
+                                        KeyFilterIndex.TryGetValue(kvp.key, out int valueindex);
+                                        int index;
+
+                                        if (!KeyFilterIndex.TryGetValue(kvp.key, out valueindex))
+                                        {
+                                            index = j; // Si no se encuentra kvp.key en el diccionario, se asigna el valor de j a index
+                                        }
+                                        else
+                                        {
+                                            index = valueindex; // Si se encuentra kvp.key en el diccionario, se asigna el valor asociado a index
+                                        }
+
+                                        if (kvp.key == "ID" || kvp.key == "ORD")
+                                        {
+                                            valoresOrdenados[index] = contador;
+                                            break;
+                                        }
                                         // Si hay coincidencia, agregar el valor al resultado
-                                        valoresOrdenados[k] = ValidacionesValores(valores, kvp.index, kvp.key);
+                                        valoresOrdenados[index] = ValidacionesValores(valores, kvp.index, kvp.key);
                                         break;
                                     }
                                     // Incrementa i solo si no hay coincidencia
@@ -287,6 +301,8 @@ namespace MyRestApi.Controllers
 
                             // Agregar la nueva fila al nuevo DataTable
                             dataTable.Rows.Add(valoresOrdenados);
+
+                            contador++;
                         }
 
                         using (SqlConnection sqlConnection = new SqlConnection(connectionString))
@@ -389,19 +405,19 @@ namespace MyRestApi.Controllers
 
                 if (nameColumn == "CLASIFICACION")
                 {
-                    KeyFilterClas.TryGetValue(valor[0], out string KeyValue);
+                    KeyFilterClas.TryGetValue(valor[index], out string KeyValue);
                     resultado = KeyValue;
                 }
 
                 if (nameColumn == "TIPO")
                 {
-                    KeyFilterClasTipoU.TryGetValue(valor[11], out string KeyValue);
+                    KeyFilterClasTipoU.TryGetValue(valor[index], out string KeyValue);
                     resultado = KeyValue;
                 }
 
                 if (nameColumn == "SEXO")
-                {
-                    KeyFilterClas.TryGetValue(valor[7], out string KeyValue);
+                { 
+                    KeyFilterSex.TryGetValue(valor[index], out string KeyValue);
                     resultado = KeyValue;
                 }
 
@@ -412,11 +428,73 @@ namespace MyRestApi.Controllers
                 if (nameColumn == "CARGA_I") {
                     resultado = "t";
                 }
+
+                if (nameColumn == "GRADO") {
+                    resultado = valor[index];
+                    //List<Grado> ListaGradoMilitar = (ObtenerGradosMilitares(valor[index]));
+                    //resultado = ListaGradoMilitar.First().DESCRIPCION;
+                }
+
+
+                if (nameColumn == "CEDULA")
+                {
+                    resultado = valor[index];
+                    //List<Grado> ListaGradoMilitar = (ObtenerGradosMilitares(valor[index]));
+                    //resultado = ListaGradoMilitar.First().DESCRIPCION;
+                }
+
+                if (nameColumn == "F_ING" || nameColumn == "F_NAC")
+                {
+                    string formato = "dd/M/yyyy";
+                    if (DateTime.TryParseExact(valor[index], formato, null, System.Globalization.DateTimeStyles.None, out DateTime fecha))
+                    {
+
+                        if (fecha < new DateTime(1900, 1, 1))
+                        {
+                            // La fecha es menor que 01/01/1900, asignar un valor predeterminado de "01/01/1900"
+                            resultado = "01/01/1900 00:00:00";
+                        }
+                        else
+                        {
+                            resultado = fecha.ToString("dd/MM/yyyy"); // Asignar la fecha al arreglo
+                        }
+                    }
+                    string formato2 = "dd/MM/yyyy";
+                    if (DateTime.TryParseExact(valor[index], formato2, null, System.Globalization.DateTimeStyles.None, out DateTime fecha2))
+                    {
+
+                        if (fecha2 < new DateTime(1900, 1, 1))
+                        {
+                            // La fecha es menor que 01/01/1900, asignar un valor predeterminado de "01/01/1900"
+                            resultado = "01/01/1900 00:00:00";
+                        }
+                        else
+                        {
+                            resultado = fecha.ToString("dd/MM/yyyy"); // Asignar la fecha al arreglo
+                        }
+                    }
+
+                    string formato5 = "d/M/yyyy";
+                    if (DateTime.TryParseExact(valor[index], formato5, null, System.Globalization.DateTimeStyles.None, out DateTime fecha5))
+                    {
+
+                        if (fecha5 < new DateTime(1900, 1, 1))
+                        {
+                            // La fecha es menor que 01/01/1900, asignar un valor predeterminado de "01/01/1900"
+                            resultado = "01/01/1900 00:00:00";
+                        }
+                        else
+                        {
+                            resultado = fecha5.ToString("dd/MM/yyyy"); // Asignar la fecha al arreglo
+                        }
+                    }
+
+                }
             } 
             catch(Exception ex) {
                 // Handle any exceptions here
                 resultado = "";
-                Console.WriteLine("Error al validar columnas: " + ex.Message);
+                Console.WriteLine("Error al validar columnas: " + ex.Message, valor);
             }
             return resultado;
         }
